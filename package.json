@@ -1,0 +1,12 @@
+{
+  "name": "drip-web",
+  "version": "0.0.0",
+  "scripts": {
+    "prepare": "rustup override set nightly && rustup target add wasm32-unknown-unknown && cargo install trunk --locked",
+  },
+  "author": "Al Miller <al@krondor.org>",
+  "license": "MIT",
+  "devDependencies": {
+    "tailwindcss": "^3.3.5"
+  }
+}
