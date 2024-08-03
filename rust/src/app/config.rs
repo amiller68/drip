@@ -3,16 +3,7 @@ use url::Url;
 use super::Args;
 
 #[derive(Debug)]
-pub struct Config {
-    // ipfs_rpc_url
-    ipfs_rpc_url: Url,
-
-    // Ethereum RPC Config
-    eth_rpc_url: Url,
-
-    // Ethereum chain id
-    eth_chain_id: u32,
-}
+pub struct Config {}
 
 impl From<&Args> for Config {
     fn from(args: &Args) -> Self {
@@ -38,7 +29,7 @@ impl Config {
     pub fn eth_rpc_url(&self) -> &Url {
         &self.eth_rpc_url
     }
-    pub fn eth_chain_id(&self) -> u32 {
+    pub fn eth_chain_id(&self) -> u64 {
         self.eth_chain_id
     }
 }

@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fmt::Display;
 
+use alloy::primitives::Address;
 use clap::Subcommand;
 use url::Url;
 
@@ -67,12 +68,14 @@ pub struct Args {
 
     #[clap(long = "ipfs-rpc", short = 'i')]
     pub maybe_ipfs_rpc_url: Option<Url>,
+    #[clap(long = "address", short = 'a')]
+    pub maybe_eth_address: Option<Address>,
     #[clap(long = "eth-rpc", short = 'e')]
     pub maybe_eth_rpc_url: Option<Url>,
     #[clap(long = "chain-id", short = 'c')]
-    pub maybe_eth_chain_id: Option<u32>,
+    pub maybe_eth_chain_id: Option<u64>,
     #[clap(long = "private-key", short = 'p')]
-    pub maybe_private_key: Option<String>,
+    pub maybe_private_key_hex: Option<String>,
 }
 
 use crate::command_enum;

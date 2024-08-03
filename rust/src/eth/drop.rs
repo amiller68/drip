@@ -1,22 +1,31 @@
-use std::ops::Deref;
+use alloy::contract::{ContractInstance, Interface};
+use alloy::json_abi::JsonAbi;
+use alloy::network::Ethereum;
+use alloy::primitives::Address;
+use alloy::providers::Provider;
+use alloy::transports::http::{Client, Http};
 
-use alloy::contract::ContractInstance;
-use alloy::primitives::{Address, Bytes, U256};
+use super::EthHttpProvider;
 
-use super::EthClient;
+pub struct Drop<P>(ContractInstance<P, Box<dyn Provider<P>>, Ethereum>);
 
-pub struct Drop(ContractInstance);
-
-impl Deref for Drop {
-    type Target = ContractInstance,
-    
-}
-
-impl Drop {
+impl Drop<Http<Client>> {
     // TODO: hardcode address maybe
     //  and add registry for network
-    pub fn from_client(address: Address, client: EthClient) -> Self {
-        todo!()
+    pub fn http(address: Address, provider: EthHttpProvider) -> Self {
+        // TODO: make this update based on abi maybe
+        let abi = JsonAbi::parse([
+            "constructor(bytes32[2] memory _cid)",
+            "function cid() public view returns (bytes32[2] memory)",
+            "function claim() public view returns (bytes20[2] memory)",
+            "function shareWith(bytes20[2] memory _share, address recipient) public",
+        ])
+        .unwrap();
+        Self(ContractInstance::new(
+            address,
+            provider.inner(),
+            Interface::new(abi),
+        ))
     }
 }
 

@@ -7,22 +7,25 @@ import {Drop} from "../src/Drop.sol";
 contract DropTest is Test {
     bytes32 foo = "foo";
     bytes32 bar = "bar";
+    bytes20 biz = "biz";
+    bytes20 baz = "baz";
     bytes32[2] cid = [foo,bar];
-    bytes32[2] share = [bar,foo];
-    RootCid public root_cid;
+    bytes20[2] share = [biz,baz];
+    Drop public drop;
 
     function setUp() public {
         drop = new Drop(cid);
     }
 
-    function testCid() public {
-        bytes32[2] memory _cid = root_cid.cid();
+    function testCid() public view {
+        bytes32[2] memory _cid = drop.cid();
+
         assertEq(_cid[0], cid[0]);
         assertEq(_cid[1], cid[1]);
     }
     function testShare() public {
-        root_cid.share(share, this);
-        bytes20[2] memory _share = root_cid.claim();
+        drop.shareWith(share, address(this));
+        bytes20[2] memory _share = drop.claim();
         assertEq(_share[0], share[0]);
         assertEq(_share[1], share[1]);
     }

@@ -12,12 +12,20 @@ sol! {
 
 impl From<Cid> for CidSol {
     fn from(cid: Cid) -> Self {
+        let buff_0 = [0u8; 32];
+        let buff_1 = [0u8; 32];
         let bytes = cid.to_bytes();
         let mut value = [FixedBytes::<CID_BLOCK_BYTES_SIZE>::default(); 2];
-        value[0].copy_from_slice(&bytes[..32]);
-        if bytes.len() > 32 {
-            value[1][..bytes.len() - 32].copy_from_slice(&bytes[32..]);
-        }
+        let all_bytes = bytes
+            .iter()
+            .chain(buff_0.iter())
+            .chain(buff_1.iter())
+            .take(64)
+            .copied()
+            .collect::<Vec<u8>>();
+        let (bytes_0, bytes_1) = all_bytes.split_at(32);
+        value[0].copy_from_slice(&bytes_0);
+        value[1].copy_from_slice(&bytes_1);
         Self { value }
     }
 }

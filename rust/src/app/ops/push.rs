@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use drip::types::Cid;
 
-use crate::app::{AppState, Config, Op};
+use crate::app::{AppState, Op};
 
 #[derive(Debug, clap::Args, Clone)]
 pub struct Push {
@@ -24,9 +24,6 @@ impl Op for Push {
     type Output = Cid;
 
     async fn execute(&self, args: &crate::app::Args) -> Result<Self::Output, Self::Error> {
-        let config = Config::from(args);
-        let _state = AppState::from(&config);
-
         Ok(Cid::default())
     }
 }
