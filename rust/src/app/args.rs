@@ -1,11 +1,12 @@
 use std::error::Error;
 use std::fmt::Display;
 
-use alloy::primitives::Address;
 use clap::Subcommand;
 use url::Url;
 
-use super::ops::Push as PushOp;
+use super::ops::Gen as GenOp;
+use super::ops::Pull as PullOp;
+use super::AppState;
 
 pub use clap::Parser;
 
@@ -16,7 +17,7 @@ pub trait Op: Send + Sync {
     type Error: Error + Send + Sync + 'static;
     type Output: Display;
 
-    async fn execute(&self, args: &Args) -> Result<Self::Output, Self::Error>;
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, Self::Error>;
 }
 
 #[macro_export]
@@ -45,11 +46,11 @@ macro_rules! command_enum {
             type Output = OpOutput;
             type Error = OpError;
 
-            async fn execute(&self, args: &Args) -> Result<Self::Output, Self::Error> {
+            async fn execute(&self, state: &AppState) -> Result<Self::Output, Self::Error> {
                 match self {
                     $(
                         Command::$variant(op) => {
-                            op.execute(args).await
+                            op.execute(state).await
                                 .map(OpOutput::$variant)
                                 .map_err(OpError::$variant)
                         },
@@ -68,8 +69,6 @@ pub struct Args {
 
     #[clap(long = "ipfs-rpc", short = 'i')]
     pub maybe_ipfs_rpc_url: Option<Url>,
-    #[clap(long = "address", short = 'a')]
-    pub maybe_eth_address: Option<Address>,
     #[clap(long = "eth-rpc", short = 'e')]
     pub maybe_eth_rpc_url: Option<Url>,
     #[clap(long = "chain-id", short = 'c')]
@@ -81,7 +80,9 @@ pub struct Args {
 use crate::command_enum;
 
 command_enum! {
-    (Push, PushOp),
+    // (Push, PushOp),
+    (Gen, GenOp),
+(Pull, PullOp)
     // Define more commands here
 }
 
@@ -89,7 +90,8 @@ impl fmt::Display for OpOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             // Define more variants here
-            OpOutput::Push(output) => write!(f, "{}", output),
+            OpOutput::Gen(output) => write!(f, "{}", output),
+            OpOutput::Pull(_) => write!(f, "done!"),
         }
     }
 }

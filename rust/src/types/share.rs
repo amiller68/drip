@@ -1,4 +1,5 @@
 use std::convert::TryFrom;
+use std::fmt::Display;
 
 use aes_kw::KekAes256 as Kek;
 use secp256k1::ecdh::SharedSecret;
@@ -9,6 +10,12 @@ const SHARE_SIZE: usize = 73;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Share(pub(crate) [u8; SHARE_SIZE]);
+
+impl Display for Share {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_hex())
+    }
+}
 
 impl Default for Share {
     fn default() -> Self {
@@ -39,10 +46,10 @@ impl Share {
         hex::encode(&self.0)
     }
 
-    pub fn share_secret(secret: Secret, public_key: &PublicKey) -> Result<Self, ShareError> {
+    pub fn new(secret: &Secret, public_key: &PublicKey) -> Result<Self, ShareError> {
         let esk = PrivateKey::generate();
         let epk = esk.public_key();
-        let shared_secret = SharedSecret::new(&public_key, &esk.encryption_key());
+        let shared_secret = SharedSecret::new(&public_key, &esk);
 
         let kek = Kek::from(shared_secret.secret_bytes());
         let wrapped = kek
@@ -58,7 +65,7 @@ impl Share {
     pub fn recover_secret(&self, private_key: &PrivateKey) -> Result<Secret, ShareError> {
         let epk = PublicKey::try_from(&self.0[..PUBLIC_KEY_SIZE])
             .map_err(|_| anyhow::anyhow!("invalid public key"))?;
-        let shared_secret = SharedSecret::new(&epk, &private_key.encryption_key());
+        let shared_secret = SharedSecret::new(&epk, &private_key);
         let kek = Kek::from(shared_secret.secret_bytes());
         let unwrapped = kek
             .unwrap_vec(&self.0[PUBLIC_KEY_SIZE..])
@@ -93,10 +100,10 @@ mod test {
 
     #[test]
     fn test_share_secret() {
-        let secret = Secret::from_slice(&[0; SECRET_SIZE]);
+        let secret = Secret::from_slice(&[0; SECRET_SIZE]).unwrap();
         let secret_key = PrivateKey::generate();
         let public_key = secret_key.public_key();
-        let share = Share::share_secret(secret, &public_key).unwrap();
+        let share = Share::new(&secret, &public_key).unwrap();
         let recovered_secret = share.recover_secret(&secret_key).unwrap();
         assert_eq!(secret, recovered_secret);
     }

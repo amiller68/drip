@@ -10,11 +10,11 @@ contract DropTest is Test {
     bytes20 biz = "biz";
     bytes20 baz = "baz";
     bytes32[2] cid = [foo,bar];
-    bytes20[2] share = [biz,baz];
+    bytes20[4] share = [biz,baz,biz,baz];
     Drop public drop;
 
     function setUp() public {
-        drop = new Drop(cid);
+        drop = new Drop(cid, share);
     }
 
     function testCid() public view {
@@ -25,8 +25,10 @@ contract DropTest is Test {
     }
     function testShare() public {
         drop.shareWith(share, address(this));
-        bytes20[2] memory _share = drop.claim();
+        bytes20[4] memory _share = drop.claim();
         assertEq(_share[0], share[0]);
         assertEq(_share[1], share[1]);
+        assertEq(_share[2], share[0]);
+        assertEq(_share[3], share[1]);
     }
 }

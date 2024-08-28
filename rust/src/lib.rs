@@ -18,7 +18,7 @@ mod wasm;
 /// ```
 pub mod prelude {
     pub use crate::error::{BlossomError, BlossomResult};
-    pub use crate::eth::{CidSol, Drop, EthHttpProvider, ShareSol};
+    pub use crate::eth::{CidSol, DropContract, ShareSol};
     pub use crate::ipfs::IpfsRpc;
     pub use crate::types;
 }

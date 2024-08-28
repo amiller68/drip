@@ -108,6 +108,46 @@ impl IpfsRpc<IpfsClient> {
         Ok(cid)
     }
 
+    /// Add raw data to Ipfs, safe to send over threads.
+    ///  This will implement chunking for you
+    /// Do not use over data where you need control over codecs and chunking
+    /// # Arguments
+    /// * code: the multihash code to use for the block
+    /// * data: the data to add. This can be anything that implements Read. Should be safely passable between threads
+    /// # Returns
+    /// * the Cid of the data
+    pub async fn add_data_send_safe<R>(&self, code: MhCode, data: R) -> Result<Cid, IpfsRpcError>
+    where
+        R: Read + Send + Sync + 'static + Unpin,
+    {
+        let hash = match code {
+            MhCode::Blake3_256 => "blake3",
+            MhCode::Sha3_256 => "sha3-256",
+            _ => todo!(),
+        };
+
+        let options = AddRequest {
+            hash: Some(hash),
+            cid_version: Some(DEFAULT_CID_VERSION),
+            ..Default::default()
+        };
+
+        let client = self.clone();
+        let response = tokio::task::spawn_blocking(move || {
+            tokio::runtime::Handle::current()
+                .block_on(client.add_with_options(data, options))
+                .map_err(IpfsRpcError::from)
+        })
+        .await
+        .map_err(|e| {
+            IpfsRpcError::Default(anyhow::anyhow!("blockstore tokio runtime error: {e}"))
+        })??;
+
+        let cid = Cid::from_str(&response.hash)?;
+
+        Ok(cid)
+    }
+
     /// Get raw data from Ipfs. This will traverse the dag and return the raw data
     /// # Arguments
     /// * cid: the Cid of the data to get
@@ -122,6 +162,21 @@ impl IpfsRpc<IpfsClient> {
             .try_concat()
             .await?;
         let response = response_stream;
+        Ok(response)
+    }
+
+    pub async fn cat_data_send_safe(&self, cid: &Cid) -> Result<Vec<u8>, IpfsRpcError> {
+        let cid = *cid;
+        let client = self.clone();
+        let response = tokio::task::spawn_blocking(move || {
+            tokio::runtime::Handle::current()
+                .block_on(client.cat_data(&cid))
+                .map_err(IpfsRpcError::from)
+        })
+        .await
+        .map_err(|e| {
+            IpfsRpcError::Default(anyhow::anyhow!("blockstore tokio runtime error: {e}"))
+        })??;
         Ok(response)
     }
 

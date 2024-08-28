@@ -1,12 +1,14 @@
 use std::convert::TryFrom;
 
-use alloy::primitives::Address;
+use alloy::network::EthereumWallet;
+use alloy::providers::{Provider, ProviderBuilder};
+use alloy::transports::http::{Client, Http};
+use alloy_chains::NamedChain;
 use url::Url;
 
 use super::Args;
 
 use drip::{
-    eth::{Drop, EthHttpProvider},
     ipfs::{IpfsClient, IpfsRpc},
     types::PrivateKey,
 };
@@ -15,14 +17,11 @@ pub struct AppState {
     // ipfs_rpc_url
     ipfs_rpc: IpfsRpc<IpfsClient>,
 
-    // Maybe Eth Address
-    maybe_eth_address: Option<Address>,
-
     // Ethereum rpc url
     eth_rpc_url: Url,
 
     // Ethereum chain id
-    eth_chain_id: u64,
+    eth_chain: NamedChain,
 
     // secret key hex
     maybe_private_key: Option<PrivateKey>,
@@ -43,6 +42,7 @@ impl TryFrom<&Args> for AppState {
             None => Url::parse("http://localhost:8545").unwrap(),
         };
         let eth_chain_id = args.maybe_eth_chain_id.unwrap_or(31337);
+        let eth_chain = NamedChain::try_from(eth_chain_id).expect("valid chain id");
         let maybe_private_key = match &args.maybe_private_key_hex {
             Some(pkh) => Some(
                 PrivateKey::from_hex(pkh)
@@ -54,9 +54,8 @@ impl TryFrom<&Args> for AppState {
 
         Ok(Self {
             ipfs_rpc,
-            maybe_eth_address: args.maybe_eth_address,
             eth_rpc_url,
-            eth_chain_id,
+            eth_chain,
             maybe_private_key,
         })
     }
@@ -74,16 +73,21 @@ impl AppState {
         &self.ipfs_rpc
     }
 
-    pub fn eth_provider(&self) -> EthHttpProvider {
-        EthHttpProvider::new(&self.eth_rpc_url, self.eth_chain_id)
+    pub fn eth_provider(&self) -> impl Provider<Http<Client>> {
+        let private_key = self
+            .maybe_private_key
+            .as_ref()
+            .expect("private key")
+            .signer()
+            .0;
+        ProviderBuilder::new()
+            .with_recommended_fillers()
+            .with_chain(self.eth_chain)
+            // .wallet(EthereumWallet::from(private_key))
+            .on_http(self.eth_rpc_url.clone())
     }
 
     pub fn private_key(&self) -> &PrivateKey {
         &self.maybe_private_key.as_ref().expect("private key")
-    }
-
-    pub fn drop(&self) -> Drop<alloy::transports::http::Http<alloy::transports::http::Client>> {
-        let address = self.maybe_eth_address.expect("eth address");
-        Drop::http(address.clone(), self.eth_provider())
     }
 }

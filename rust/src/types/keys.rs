@@ -1,13 +1,19 @@
 use std::convert::TryFrom;
-use std::io::Read;
 use std::ops::Deref;
 
-use alloy::signers::local::PrivateKeySigner as PPrivateKeySigner;
-use rand::rngs::OsRng;
+use aes_gcm::{
+    aead::{Aead, AeadCore, KeyInit},
+    Aes256Gcm, Key, Nonce,
+};
+use rand_core::{OsRng, RngCore};
+
+use alloy::signers::{local::PrivateKeySigner as PPrivateKeySigner, Signer};
 use secp256k1::{generate_keypair as _generate_keypair, Secp256k1};
 use secp256k1::{PublicKey as SPublicKey, SecretKey as SSecretKey}; // Assuming AES-256, so 32 bytes key
 
+pub const NONCE_SIZE: usize = 16;
 pub const SECRET_SIZE: usize = 32;
+pub const PRIVATE_KEY_SIZE: usize = 32;
 pub const PUBLIC_KEY_SIZE: usize = 33;
 
 fn generate_keypair() -> (SSecretKey, SPublicKey) {
@@ -15,6 +21,7 @@ fn generate_keypair() -> (SSecretKey, SPublicKey) {
     _generate_keypair(&mut rng)
 }
 
+#[derive(Debug, PartialEq)]
 pub struct Secret([u8; SECRET_SIZE]);
 
 impl Default for Secret {
@@ -45,13 +52,58 @@ impl Into<PPrivateKeySigner> for Secret {
 
 impl Secret {
     pub fn new() -> Self {
-        let (secret_key, _) = generate_keypair();
-        Secret(secret_key.secret_bytes())
+        let mut buff = [0; SECRET_SIZE];
+        OsRng.fill_bytes(&mut buff);
+        Self(buff)
+    }
+
+    pub fn from_slice(data: &[u8]) -> Result<Self, SecretError> {
+        if data.len() != SECRET_SIZE {
+            return Err(anyhow::anyhow!("invalid secret size").into());
+        }
+        let mut buff = [0; SECRET_SIZE];
+        buff.copy_from_slice(data);
+        Ok(buff.into())
     }
 
     pub fn bytes(&self) -> &[u8] {
         self.0.as_ref()
     }
+
+    pub fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>, SecretError> {
+        let mut rng = OsRng::default();
+        let key: &Key<Aes256Gcm> = self.bytes().into();
+
+        let cipher = Aes256Gcm::new(&key);
+        let nonce = Aes256Gcm::generate_nonce(&mut rng); // 96-bits; unique per message
+        let ciphertext = cipher
+            .encrypt(&nonce, data.as_ref())
+            .map_err(|_| anyhow::anyhow!("encrypt error"))?;
+
+        let mut out = Vec::with_capacity(NONCE_SIZE + ciphertext.len());
+
+        out.extend_from_slice(nonce.as_ref());
+        out.extend_from_slice(ciphertext.as_ref());
+
+        Ok(out)
+    }
+
+    pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, SecretError> {
+        let key: &Key<Aes256Gcm> = self.bytes().into();
+        let nonce = Nonce::from_slice(&data[..NONCE_SIZE]);
+        let cipher = Aes256Gcm::new(&key);
+        let decrypted = cipher
+            .decrypt(nonce, &data[NONCE_SIZE..])
+            .map_err(|_| anyhow::anyhow!("decrypt error"))?;
+
+        Ok(decrypted.to_vec())
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SecretError {
+    #[error("default: {0}")]
+    Default(#[from] anyhow::Error),
 }
 
 pub struct PublicKey(SPublicKey);
@@ -95,7 +147,7 @@ pub enum PublicKeyError {
     Default(#[from] anyhow::Error),
 }
 
-pub struct PrivateKeySigner(PPrivateKeySigner);
+pub struct PrivateKeySigner(pub PPrivateKeySigner);
 
 impl Deref for PrivateKeySigner {
     type Target = PPrivateKeySigner;
@@ -104,50 +156,43 @@ impl Deref for PrivateKeySigner {
     }
 }
 
-pub struct PrivateEncryptionKey(SSecretKey);
+pub struct PrivateKey(SSecretKey);
 
-impl Deref for PrivateEncryptionKey {
+impl From<[u8; PRIVATE_KEY_SIZE]> for PrivateKey {
+    fn from(secret: [u8; PRIVATE_KEY_SIZE]) -> Self {
+        Self(SSecretKey::from_slice(&secret).unwrap())
+    }
+}
+
+impl Deref for PrivateKey {
     type Target = SSecretKey;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-pub struct PrivateKey(Secret);
-
-impl From<[u8; SECRET_SIZE]> for PrivateKey {
-    fn from(secret: [u8; SECRET_SIZE]) -> Self {
-        Self(Secret::from(secret))
-    }
-}
-
 impl PrivateKey {
     pub fn from_hex(hex: &str) -> Result<Self, PrivateKeyError> {
-        let mut buff = [0; SECRET_SIZE];
+        // Optionally strip off 0x if it begins with one
+        let hex = hex.strip_prefix("0x").unwrap_or(hex);
+        let mut buff = [0; PRIVATE_KEY_SIZE];
         hex::decode_to_slice(hex, &mut buff).map_err(|_| anyhow::anyhow!("hex decode error"))?;
         Ok(Self::from(buff))
     }
 
     pub fn generate() -> Self {
         let (secret_key, _) = generate_keypair();
-        Self(Secret(secret_key.secret_bytes()))
+        Self(secret_key)
     }
 
     pub fn public_key(&self) -> PublicKey {
         let secp = Secp256k1::new();
-        let secret_key = SSecretKey::from_slice(&self.0 .0).unwrap();
-        let public_key = secret_key.public_key(&secp);
+        let public_key = self.0.public_key(&secp);
         PublicKey(public_key)
     }
-
-    pub fn encryption_key(&self) -> PrivateEncryptionKey {
-        let secret_key = SSecretKey::from_slice(&self.0 .0).unwrap();
-        PrivateEncryptionKey(secret_key)
-    }
-
     pub fn signer(&self) -> PrivateKeySigner {
-        let private_key_signer = PPrivateKeySigner::from_slice(&self.0 .0).unwrap();
-        PrivateKeySigner(private_key_signer)
+        let private_key_signer = PPrivateKeySigner::from_slice(&self.secret_bytes()).unwrap();
+        PrivateKeySigner(private_key_signer.with_chain_id(Some(31337)))
     }
 }
 
@@ -155,4 +200,16 @@ impl PrivateKey {
 pub enum PrivateKeyError {
     #[error("default: {0}")]
     Default(#[from] anyhow::Error),
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_private_key_from_hex() {
+        let hex_secret = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+        let private_key = PrivateKey::from_hex(hex_secret).unwrap();
+        assert_eq!(hex_secret, hex::encode(private_key.secret_bytes()));
+    }
 }
